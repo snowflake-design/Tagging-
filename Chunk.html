@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Content Chunking Story</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #333;
+            overflow-x: hidden;
+        }
+        
+        /* Uniform Color Scheme */
+        .physics-color { background: #e74c3c; color: white; } /* Red */
+        .math-color { background: #f39c12; color: white; } /* Orange */
+        .chemistry-color { background: #9b59b6; color: white; } /* Purple */
+        .biology-color { background: #27ae60; color: white; } /* Green */
+        
+        .physics-bg { background: #ffebee; border-left-color: #e74c3c; }
+        .math-bg { background: #fff8e1; border-left-color: #f39c12; }
+        .chemistry-bg { background: #f3e5f5; border-left-color: #9b59b6; }
+        .biology-bg { background: #e8f5e8; border-left-color: #27ae60; }
+        
+        .slide {
+            min-height: 100vh;
+            padding: 50px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background: white;
+            margin-bottom: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            position: relative;
+        }
+        
+        .slide-title {
+            font-size: 3.2em;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        
+        .slide-subtitle {
+            font-size: 1.6em;
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 50px;
+            font-weight: 300;
+        }
+        
+        /* Title Slide */
+        .title-slide {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+        }
+        
+        .title-slide .slide-title {
+            color: white;
+            font-size: 4em;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        .title-slide .slide-subtitle {
+            color: rgba(255,255,255,0.9);
+            font-size: 2em;
+        }
+        
+        /* Document Slide */
+        .document-frame {
+            background: #f8f9fa;
+            border-radius: 20px;
+            padding: 40px;
+            border: 4px solid #3498db;
+            max-width: 900px;
+            margin: 0 auto;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        
+        .document-title {
+            background: #3498db;
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.4em;
+            margin-bottom: 30px;
+        }
+        
+        .document-content {
+            font-size: 1.2em;
+            line-height: 1.9;
+            text-align: justify;
+        }
+        
+        .highlight {
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        
+        /* Comparison Slide */
+        .chunking-comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .chunking-panel {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        
+        .panel-header {
+            text-align: center;
+            font-size: 1.6em;
+            font-weight: bold;
+            margin-bottom: 30px;
+            padding: 20px;
+            border-radius: 15px;
+        }
+        
+        .bad-header {
+            background: #ffe6e6;
+            color: #c0392b;
+            border: 3px solid #e74c3c;
+        }
+        
+        .good-header {
+            background: #e6ffe6;
+            color: #27ae60;
+            border: 3px solid #27ae60;
+        }
+        
+        .content-chunk {
+            margin: 20px 0;
+            padding: 25px;
+            border-radius: 12px;
+            border-left: 6px solid;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .content-chunk:hover {
+            transform: translateX(8px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+        
+        .chunk-text {
+            font-size: 1em;
+            line-height: 1.6;
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .tag-container {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .domain-tag {
+            padding: 8px 16px;
+            border-radius: 25px;
+            font-size: 0.85em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .error-badge {
+            position: absolute;
+            top: -15px;
+            right: -15px;
+            background: #e74c3c;
+            color: white;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2em;
+            animation: errorShake 0.8s infinite;
+        }
+        
+        @keyframes errorShake {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-5deg); }
+            75% { transform: rotate(5deg); }
+        }
+        
+        .problem-chunk {
+            background: #fff3cd;
+            border-left-color: #e74c3c;
+            animation: problemGlow 2s infinite;
+        }
+        
+        @keyframes problemGlow {
+            0%, 100% { box-shadow: 0 0 0 rgba(231, 76, 60, 0.4); }
+            50% { box-shadow: 0 0 30px rgba(231, 76, 60, 0.7); }
+        }
+        
+        /* Context Window Slide */
+        .llm-demo {
+            background: linear-gradient(135deg, #ff4757 0%, #ff3838 100%);
+            color: white;
+            border-radius: 25px;
+            padding: 40px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(255, 71, 87, 0.4);
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        
+        .llm-demo::before {
+            content: '🚨';
+            position: absolute;
+            top: -30px;
+            left: -30px;
+            font-size: 12em;
+            opacity: 0.1;
+            transform: rotate(-20deg);
+        }
+        
+        .context-window {
+            background: rgba(255,255,255,0.96);
+            color: #2c3e50;
+            border-radius: 20px;
+            padding: 35px;
+            margin: 25px 0;
+            font-family: 'Courier New', monospace;
+            line-height: 1.5;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+        
+        .window-title {
+            background: #34495e;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px 12px 0 0;
+            font-weight: bold;
+            margin: -35px -35px 25px -35px;
+            text-align: center;
+            font-size: 1.1em;
+        }
+        
+        .prompt-section {
+            background: #e3f2fd;
+            padding: 20px;
+            border-left: 5px solid #2196f3;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        
+        .retrieved-section {
+            background: #fff3e0;
+            padding: 20px;
+            border-left: 5px solid #ff9800;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        
+        .chunk-display {
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 0.95em;
+        }
+        
+        .wrong-physics {
+            background: #ffebee;
+            border: 2px dashed #e74c3c;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        
+        .missing-math {
+            background: #fff8e1;
+            border: 2px dashed #f39c12;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        
+        .context-waste {
+            background: #dc3545;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: bold;
+            margin: 15px 0;
+            font-size: 1.1em;
+        }
+        
+        .analysis-box {
+            background: #fff;
+            color: #333;
+            padding: 25px;
+            border-radius: 12px;
+            margin: 25px 0;
+        }
+        
+        .problem-item {
+            margin: 15px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #e74c3c;
+            border-radius: 8px;
+        }
+        
+        .problem-item::before {
+            content: '❌ ';
+            font-weight: bold;
+            color: #e74c3c;
+        }
+        
+        /* Solution Slide */
+        .solution-showcase {
+            background: linear-gradient(135deg, #00b894 0%, #00cec9 100%);
+            color: white;
+            border-radius: 25px;
+            padding: 40px;
+            position: relative;
+            box-shadow: 0 15px 35px rgba(0, 184, 148, 0.4);
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .solution-showcase::before {
+            content: '✨';
+            position: absolute;
+            top: -30px;
+            right: -30px;
+            font-size: 12em;
+            opacity: 0.15;
+        }
+        
+        .how-semantic-works {
+            background: rgba(255,255,255,0.15);
+            border-radius: 20px;
+            padding: 30px;
+            margin: 30px 0;
+            backdrop-filter: blur(10px);
+        }
+        
+        .process-steps {
+            color: white;
+            font-size: 1.2em;
+            line-height: 1.8;
+        }
+        
+        .process-steps li {
+            margin: 15px 0;
+            padding-left: 15px;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 25px;
+            margin: 40px 0;
+        }
+        
+        .metric-card {
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            transition: transform 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-8px);
+        }
+        
+        .metric-value {
+            font-size: 3.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .metric-description {
+            font-size: 1.2em;
+            font-weight: 600;
+        }
+        
+        .slide-number {
+            position: absolute;
+            bottom: 30px;
+            right: 40px;
+            font-size: 1.3em;
+            color: #95a5a6;
+            font-weight: bold;
+        }
+        
+        .navigation {
+            position: fixed;
+            right: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+        }
+        
+        .nav-dot {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.6);
+            margin: 15px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+        }
+        
+        .nav-dot.active {
+            background: #3498db;
+            transform: scale(1.4);
+            box-shadow: 0 0 15px rgba(52, 152, 219, 0.6);
+        }
+        
+        .nav-dot:hover {
+            background: #3498db;
+            transform: scale(1.2);
+        }
+        
+        .excluded-chunk {
+            background: #ffe6e6;
+            border: 3px dashed #e74c3c;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            opacity: 0.7;
+        }
+        
+        .physics-waste {
+            background: #ffcdd2;
+            border: 2px solid #e74c3c;
+            padding: 8px;
+            border-radius: 5px;
+            margin: 8px 0;
+            text-decoration: line-through;
+        }
+    </style>
+</head>
+<body>
+    <!-- Slide 1: Title -->
+    <div class="slide title-slide">
+        <div class="slide-title">The Context Window Heist</div>
+        <div class="slide-subtitle">How Wrong Chunks Steal Precious Token Space</div>
+        <div style="font-size: 3em; margin: 30px 0; opacity: 0.9;">📚 💸 🤖</div>
+        <div class="slide-number">1/5</div>
+    </div>
+
+    <!-- Slide 2: The Document -->
+    <div class="slide">
+        <div class="slide-title">Our Multi-Domain Document</div>
+        <div class="slide-subtitle">Scientific concepts mixed together</div>
+        
+        <div class="document-frame">
+            <div class="document-title">📄 Advanced Science Textbook - Chapter 15</div>
+            <div class="document-content">
+                The <span class="highlight physics-color">electromagnetic force follows Coulomb's law F = kq₁q₂/r², governing interactions between charged particles. Electric fields E = F/q create potential differences that drive current flow in circuits</span>. Advanced <span class="highlight math-color">calculus techniques like partial derivatives ∂f/∂x and multiple integrals ∭f(x,y,z)dxdydz are essential for solving complex three-dimensional problems. Vector field analysis using divergence ∇⋅F and curl ∇×F helps understand fluid dynamics</span>. In <span class="highlight chemistry-color">organic chemistry, molecular orbital theory explains bonding through LCAO approximations. Reaction mechanisms involve electron movement shown by curved arrows, with nucleophiles attacking electrophilic centers</span>. Pure <span class="highlight math-color">differential equations like d²y/dx² + p(x)dy/dx + q(x)y = 0 model oscillatory systems. Fourier series decompose periodic functions into sin and cos components: f(x) = Σ(aₙcos(nx) + bₙsin(nx)). This complete Fourier analysis is crucial for understanding wave behavior in fluid systems and solving differential equations analytically</span>. <span class="highlight biology-color">Cellular respiration occurs through glycolysis, citric acid cycle, and electron transport chain. Mitochondria produce ATP through chemiosmotic coupling across inner membrane gradients</span>.
+            </div>
+        </div>
+        <div class="slide-number">2/5</div>
+    </div>
+
+    <!-- Slide 3: Chunking Comparison -->
+    <div class="slide">
+        <div class="slide-title">The Chunking Battle</div>
+        <div class="slide-subtitle">Fixed-size creates the problematic mixed chunk</div>
+        
+        <div class="chunking-comparison">
+            <!-- Fixed-Size Chunking -->
+            <div class="chunking-panel">
+                <div class="panel-header bad-header">
+                    🔪 Fixed-Size Chunking<br><small>(250 characters)</small>
+                </div>
+                
+                <div class="content-chunk physics-bg">
+                    <div class="chunk-text">The electromagnetic force follows Coulomb's law F = kq₁q₂/r², governing interactions between charged particles. Electric fields E = F/q create potential differences that drive current flow in circuits. Advanced</div>
+                    <div class="tag-container">
+                        <span class="domain-tag physics-color">Physics</span>
+                    </div>
+                </div>
+                
+                <div class="content-chunk problem-chunk">
+                    <div class="error-badge">!</div>
+                    <div class="chunk-text">current flow in circuits. Magnetic fields B = μH create forces on moving charges. Electromagnetic waves propagate through space at light speed c. Faraday's law describes electromagnetic induction. Advanced calculus techniques like partial derivatives ∂f/∂x and multiple integrals ∭f(x,y,z)dxdydz are essential. Vector field analysis using divergence ∇⋅F and curl ∇×F helps</div>
+                    <div class="tag-container">
+                        <span class="domain-tag physics-color">Physics</span>
+                        <span class="domain-tag math-color">Math</span>
+                    </div>
+                </div>
+                
+                <div class="content-chunk chemistry-bg">
+                    <div class="chunk-text">understand fluid dynamics. In organic chemistry, molecular orbital theory explains bonding through LCAO approximations. Reaction mechanisms involve electron movement shown by curved arrows, with nucleophiles</div>
+                    <div class="tag-container">
+                        <span class="domain-tag chemistry-color">Chemistry</span>
+                    </div>
+                </div>
+                
+                <div class="content-chunk math-bg">
+                    <div class="chunk-text">attacking electrophilic centers. Pure differential equations like d²y/dx² + p(x)dy/dx + q(x)y = 0 model oscillatory systems. Fourier series decompose periodic functions into sin and cos</div>
+                    <div class="tag-container">
+                        <span class="domain-tag math-color">Math</span>
+                    </div>
+                </div>
+                
+                <div class="content-chunk math-bg">
+                    <div class="chunk-text">components: f(x) = Σ(aₙcos(nx) + bₙsin(nx)). This complete Fourier analysis is crucial for understanding wave behavior in fluid systems and solving differential equations analytically. Cellular respiration</div>
+                    <div class="tag-container">
+                        <span class="domain-tag math-color">Math</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Semantic Chunking -->
+            <div class="chunking-panel">
+                <div class="panel-header good-header">
+                    🎯 Semantic Chunking<br><small>(Meaning-based)</small>
+                </div>
+                
+                <div class="content-chunk physics-bg">
+                    <div class="chunk-text">The electromagnetic force follows Coulomb's law F = kq₁q₂/r², governing interactions between charged particles. Electric fields E = F/q create potential differences that drive current flow in circuits.</div>
+                    <div class="tag-container">
+                        <span class="domain-tag physics-color">Physics</span>
+                    </div>
+                </div>
+                
+                <div class="content-chunk math-bg">
+                    <div class="chunk-text">Advanced calculus techniques like partial derivatives ∂f/∂x and multiple integrals ∭f(x,y,z)dxdydz are essential for solving complex three-dimensional problems. Vector field analysis using divergence ∇⋅F and curl ∇×F helps understand fluid dynamics.</div>
+                    <div class="tag-container">
+                        <span class="domain-tag math-color">Math</span>
+                    </div>
+                </div>
+                
+                <div class="content-chunk chemistry-bg">
+                    <div class="chunk-text">In organic chemistry, molecular orbital theory explains bonding through LCAO approximations. Reaction mechanisms involve electron movement shown by curved arrows, with nucleophiles attacking electrophilic centers.</div>
+                    <div class="tag-container">
+                        <span class="domain-tag chemistry-color">Chemistry</span>
+                    </div>
+                </div>
+                
+                <div class="content-chunk math-bg">
+                    <div class="chunk-text">Pure differential equations like d²y/dx² + p(x)dy/dx + q(x)y = 0 model oscillatory systems. Fourier series decompose periodic functions into sin and cos components: f(x) = Σ(aₙcos(nx) + bₙsin(nx)). This complete Fourier analysis is crucial for understanding wave behavior in fluid systems and solving differential equations analytically.</div>
+                    <div class="tag-container">
+                        <span class="domain-tag math-color">Math</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">3/5</div>
+    </div>
+
+    <!-- Slide 4: The Context Window Disaster -->
+    <div class="slide">
+        <div class="slide-title">The Token Heist in Action!</div>
+        <div class="slide-subtitle">Wrong chunks steal context space from right answers</div>
+        
+        <div class="llm-demo">
+            <div class="context-window">
+                <div class="window-title">🤖 LLM Context Window - 4096 Token Limit</div>
+                
+                <div class="prompt-section">
+                    <strong>👤 User Query:</strong><br>
+                    "Explain vector calculus operations like divergence and curl for fluid dynamics analysis"
+                </div>
+                
+                <div class="retrieved-section">
+                    <strong>🔍 System Retrieved Top 2 Chunks (Fixed-Size):</strong>
+                    
+                    <div class="chunk-display">
+                        <strong>Chunk #2 (Physics+Math):</strong><br>
+                        "calculus techniques like partial derivatives ∂f/∂x and multiple integrals ∭f(x,y,z)dxdydz are essential for solving complex three-dimensional problems. Vector field analysis using divergence ∇⋅F and curl ∇×F helps"
+                        <br><br>
+                        <div class="physics-waste">
+                            <strong>🔴 WASTED PHYSICS CONTENT:</strong> "current flow in circuits. Magnetic fields B = μH create forces on moving charges. Electromagnetic waves propagate through space at light speed c. Faraday's law describes electromagnetic induction."
+                        </div>
+                    </div>
+                    
+                    <div class="chunk-display">
+                        <strong>Chunk #4 (Math):</strong><br>
+                        "attacking electrophilic centers. Pure differential equations like d²y/dx² + p(x)dy/dx + q(x)y = 0 model oscillatory systems. Fourier series decompose periodic functions into sin and cos"
+                    </div>
+                </div>
+                
+                <div class="excluded-chunk">
+                    <strong>❌ LEFT BEHIND - Chunk #5 (Pure Math - THE GOLDEN CHUNK):</strong><br>
+                    "components: f(x) = Σ(aₙcos(nx) + bₙsin(nx)). This complete Fourier analysis is crucial for understanding wave behavior in fluid systems and solving differential equations analytically."
+                </div>
+                
+                <div class="context-waste">
+                    🚨 45% CONTEXT WASTED ON IRRELEVANT PHYSICS + INCOMPLETE CHUNKS 🚨
+                </div>
+                
+                <div class="analysis-box">
+                    <strong>💀 The Token Theft:</strong>
+                    <div class="problem-item">
+                        <strong>Physics Pollution:</strong> Electric field content irrelevant to vector calculus query
+                    </div>
+                    <div class="problem-item">
+                        <strong>Broken Concepts:</strong> Vector field analysis cut off mid-explanation
+                    </div>
+                    <div class="problem-item">
+                        <strong>Missing Gold:</strong> Complete Fourier analysis left behind due to space limits
+                    </div>
+                    <div class="problem-item">
+                        <strong>Chemistry Contamination:</strong> "attacking electrophilic centers" in math chunk
+                    </div>
+                    <div class="problem-item">
+                        <strong>Incomplete Answer:</strong> LLM cannot properly explain vector calculus
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">4/5</div>
+    </div>
+
+    <!-- Slide 5: The Solution -->
+    <div class="slide">
+        <div class="slide-title">Semantic Chunking to the Rescue!</div>
+        <div class="slide-subtitle">Perfect retrieval through meaning-based boundaries</div>
+        
+        <div class="solution-showcase">
+            <div class="how-semantic-works">
+                <h3 style="color: white; margin-bottom: 20px; font-size: 1.6em;">🧠 How Semantic Chunking Prevents Token Theft:</h3>
+                <ol class="process-steps">
+                    <li><strong>Sentence Embeddings:</strong> Each sentence converted to vector representation</li>
+                    <li><strong>Similarity Calculation:</strong> Cosine similarity between consecutive sentences</li>
+                    <li><strong>Smart Boundaries:</strong> Split when similarity drops below threshold (0.75)</li>
+                    <li><strong>Pure Concepts:</strong> Each chunk contains only related mathematical concepts</li>
+                    <li><strong>Perfect Retrieval:</strong> Gets complete vector calculus explanation without pollution</li>
+                </ol>
+            </div>
+            
+            <div style="font-size: 1.5em; text-align: center; margin: 40px 0; font-weight: bold;">
+                ✨ Result: Perfect Math chunks with zero physics contamination!
+            </div>
+            
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">97%</div>
+                    <div class="metric-description">Relevance Score</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">92%</div>
+                    <div class="metric-description">Token Efficiency</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">0%</div>
+                    <div class="metric-description">Content Waste</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">100%</div>
+                    <div class="metric-description">Concept Integrity</div>
+                </div>
+            </div>
+            
+            <div style="font-size: 1.4em; font-weight: bold; text-align: center; margin-top: 40px;">
+                🎯 Moral: Embeddings respect conceptual boundaries, fixed-size destroys them!
+            </div>
+        </div>
+        <div class="slide-number">5/5</div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="navigation">
+        <button class="nav-dot active" onclick="navigateToSlide(1)"></button>
+        <button class="nav-dot" onclick="navigateToSlide(2)"></button>
+        <button class="nav-dot" onclick="navigateToSlide(3)"></button>
+        <button class="nav-dot" onclick="navigateToSlide(4)"></button>
+        <button class="nav-dot" onclick="navigateToSlide(5)"></button>
+    </div>
+
+    <script>
+        function navigateToSlide(slideNumber) {
+            const slides = document.querySelectorAll('.slide');
+            const targetSlide = slides[slideNumber - 1];
+            
+            targetSlide.scrollIntoView({ 
+                behavior: 'smooth',
+                block: 'start'
+            });
+            
+            // Update navigation
+            document.querySelectorAll('.nav-dot').forEach((btn, index) => {
+                btn.classList.toggle('active', index === slideNumber - 1);
+            });
+        }
+
+        // Auto-update navigation on scroll
+        window.addEventListener('scroll', () => {
+            const slides = document.querySelectorAll('.slide');
+            const scrollPosition = window.scrollY + window.innerHeight / 2;
+            
+            slides.forEach((slide, index) => {
+                const slideTop = slide.offsetTop;
+                const slideBottom = slideTop + slide.offsetHeight;
+                
+                if (scrollPosition >= slideTop && scrollPosition <= slideBottom) {
+                    document.querySelectorAll('.nav-dot').forEach((btn, btnIndex) => {
+                        btn.classList.toggle('active', btnIndex === index);
+                    });
+                }
+            });
+        });
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            const activeButton = document.querySelector('.nav-dot.active');
+            const currentSlide = Array.from(document.querySelectorAll('.nav-dot')).indexOf(activeButton) + 1;
+            
+            if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+                if (currentSlide < 5) navigateToSlide(currentSlide + 1);
+            } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+                if (currentSlide > 1) navigateToSlide(currentSlide - 1);
+            }
+        });
+
+        // Interactive effects
+        document.querySelectorAll('.content-chunk').forEach(chunk => {
+            chunk.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateX(8px) scale(1.02)';
