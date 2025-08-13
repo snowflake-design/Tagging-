@@ -7,8 +7,11 @@ import base64  # To safely pass data to JavaScript
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
 
+# LangChain components for Stage 1
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_community.embeddings import HuggingFaceEmbeddings
+
+# Visualization library for Stage 4
 from pyvis.network import Network
 from bs4 import BeautifulSoup # To inject custom HTML/JS/CSS
 
@@ -16,13 +19,17 @@ from bs4 import BeautifulSoup # To inject custom HTML/JS/CSS
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # ----------------------------------------------------------------------------
-# MOCK LLM FUNCTION (Updated for Root Node Logic)
+# MOCK LLM FUNCTION
 # ----------------------------------------------------------------------------
 def abc_response(prompt: str) -> str:
+    """
+    Mocks a blocking LLM API call. It returns a pre-defined JSON string
+    based on keywords in the prompt to simulate the hierarchical logic.
+    """
     logging.info("Simulating blocking LLM API call...")
     time.sleep(0.5)
 
-    # --- MOCK FOR STAGE 2: TOPIC TAGGING (Unchanged) ---
+    # --- MOCK FOR STAGE 2: TOPIC TAGGING ---
     if "main_topic" in prompt and "Artificial intelligence" in prompt:
         return json.dumps({
             "main_topic": "AI's Industrial Transformation",
@@ -48,13 +55,13 @@ def abc_response(prompt: str) -> str:
             "tags": ["Renewable Energy", "Solar & Wind", "Energy Storage", "Cost-Effective", "Smart Grid"]
         })
 
-    # --- MOCK FOR STAGE 3: HIERARCHICAL SYNTHESIS (Updated) ---
+    # --- MOCK FOR STAGE 3: HIERARCHICAL SYNTHESIS ---
     if "You are an expert Information Architect" in prompt:
         return json.dumps({
             "nodes": [
-                # New "Ultra Parent" or Root Node
+                # Root Node
                 {"id": "Document Analysis", "label": "Document Analysis", "group": "root", "size": 35},
-                # Existing Parent Nodes
+                # Parent Nodes
                 {"id": "Artificial Intelligence", "label": "Artificial Intelligence", "group": "parent", "size": 25},
                 {"id": "Environmental Issues", "label": "Environmental Issues", "group": "parent", "size": 25},
                 # Child Nodes
@@ -79,28 +86,57 @@ def abc_response(prompt: str) -> str:
 
 
 # ----------------------------------------------------------------------------
-# STAGE 1 & 2 (Unchanged)
+# STAGE 1: SEMANTIC CHUNKING
 # ----------------------------------------------------------------------------
-def get_semantic_chunks(text: str) -> List[str]:
-    # (Code is identical to previous version, omitted for brevity)
-    embeddings = HuggingFaceEmbeddings(model_name="all-mpnet-base-v2", model_kwargs={'device': 'cpu'}, encode_kwargs={'normalize_embeddings': True})
-    text_splitter = SemanticChunker(embeddings=embeddings, breakpoint_threshold_type="percentile", breakpoint_threshold_amount=80)
-    return text_splitter.split_text(text)
+def get_semantic_chunks(text: str, model_path="all-mpnet-base-v2", threshold=80) -> List[str]:
+    logging.info(f"🤖 Loading embedding model: {model_path}")
+    embeddings = HuggingFaceEmbeddings(
+        model_name=model_path, model_kwargs={'device': 'cpu'}, encode_kwargs={'normalize_embeddings': True}
+    )
+    text_splitter = SemanticChunker(
+        embeddings=embeddings, breakpoint_threshold_type="percentile", breakpoint_threshold_amount=threshold
+    )
+    logging.info(f"🔄 Chunking text with {threshold}th percentile threshold...")
+    chunks = text_splitter.split_text(text)
+    logging.info(f"✅ Created {len(chunks)} chunks.")
+    return chunks
 
+# ----------------------------------------------------------------------------
+# STAGE 2: AUTOMATED TOPIC TAGGING (CHUNK-LEVEL)
+# ----------------------------------------------------------------------------
 def generate_topic_for_chunk(chunk: str) -> Dict:
-    # (Code is identical to previous version, omitted for brevity)
-    prompt = f"""...""" # Using the same prompt as before
+    """Generates a main topic and tags for a single chunk."""
+    prompt = f"""
+    You are an expert data analyst. For the following text chunk, create a JSON object.
+    The "main_topic" should be a short, clear title for the chunk, like a section heading.
+
+    ```json
+    {{
+      "main_topic": "A concise title for this chunk (3-5 words).",
+      "summary": "A one-sentence summary of the chunk's main point.",
+      "tags": ["A list of 4-5 specific keywords or phrases found in the chunk."]
+    }}
+    ```
+
+    # Text Chunk to Analyze:
+    {chunk}
+
+    # Your JSON Output:
+    """
     response_str = abc_response(prompt)
     try:
         data = json.loads(response_str)
         data['original_chunk'] = chunk
         return data
-    except json.JSONDecodeError: return {}
+    except json.JSONDecodeError:
+        logging.error(f"Failed to decode JSON for chunk: {chunk[:50]}...")
+        return {}
 
 # ----------------------------------------------------------------------------
-# STAGE 3: HIERARCHICAL SYNTHESIS (Updated Prompt)
+# STAGE 3: HIERARCHICAL SYNTHESIS (DOCUMENT-LEVEL)
 # ----------------------------------------------------------------------------
 def generate_hierarchical_graph(tagged_data: List[Dict], doc_title: str) -> Dict:
+    """Analyzes all main topics to create a unified hierarchical graph."""
     main_topics = [item.get('main_topic', '') for item in tagged_data if item.get('main_topic')]
     topics_list_str = "\n- ".join(main_topics)
 
@@ -117,25 +153,42 @@ def generate_hierarchical_graph(tagged_data: List[Dict], doc_title: str) -> Dict
     # Your JSON Graph Output:
     """
     logging.info("🧠 Synthesizing unified hierarchical graph from all topics...")
-    # The actual call to abc_response() doesn't need the prompt text since it's mocked,
-    # but in a real scenario, you would pass the full prompt.
     response_str = abc_response(prompt)
     try:
         return json.loads(response_str)
     except json.JSONDecodeError:
+        logging.error("Failed to decode JSON for the hierarchical graph.")
         return {"nodes": [], "edges": []}
 
 
 # ----------------------------------------------------------------------------
-# STAGE 4: VISUALIZATION (Updated with Clickable Popups)
+# STAGE 4: VISUALIZATION (with Clickable Popups and Self-Contained)
 # ----------------------------------------------------------------------------
 def create_flow_diagram(graph_data: Dict, tagged_data: List[Dict], filename: str = "flow_diagram.html"):
-    if not graph_data.get("nodes"): return
+    """Generates a single, self-contained interactive HTML graph."""
+    if not graph_data.get("nodes"):
+        logging.warning("No nodes found. Skipping visualization.")
+        return
 
-    net = Network(height="90vh", width="100%", bgcolor="#ffffff", font_color="black", notebook=False, directed=True)
+    net = Network(
+        height="90vh",
+        width="100%",
+        bgcolor="#ffffff",
+        font_color="black",
+        notebook=False,
+        directed=True,
+        cdn_resources='in_line'  # Makes the HTML file self-contained
+    )
+    
     net.set_options("""
     var options = {
-      "physics": { "solver": "hierarchicalRepulsion", "hierarchicalRepulsion": { "nodeDistance": 250 } }
+      "physics": {
+        "solver": "hierarchicalRepulsion",
+        "hierarchicalRepulsion": {
+          "nodeDistance": 250,
+          "springLength": 200
+        }
+      }
     }
     """)
 
@@ -151,15 +204,12 @@ def create_flow_diagram(graph_data: Dict, tagged_data: List[Dict], filename: str
         color_map = {"root": "#8B0000", "parent": "#FF4500", "child": "#1E90FF"}
         color = color_map.get(group, "#808080")
 
-        # Prepare data for the popup
         onclick_handler = ""
         chunk_info = next((item for item in tagged_data if item.get('main_topic') == label), None)
         if chunk_info:
             summary = chunk_info.get('summary', 'No summary.')
             tags_html = "<ul>" + "".join(f"<li>{tag}</li>" for tag in chunk_info.get('tags', [])) + "</ul>"
             chunk_text = chunk_info.get('original_chunk', 'No original text.').replace('\n', '<br>')
-
-            # We encode the HTML content in Base64 to safely pass it into a JavaScript string
             popup_html_content = f"<h3>{label}</h3><h4>Summary</h4><p>{summary}</p><h4>Tags</h4>{tags_html}<h4>Original Text</h4><p>{chunk_text}</p>"
             encoded_content = base64.b64encode(popup_html_content.encode('utf-8')).decode('utf-8')
             onclick_handler = f"showPopup('{encoded_content}');"
@@ -169,24 +219,26 @@ def create_flow_diagram(graph_data: Dict, tagged_data: List[Dict], filename: str
     for edge in edges:
         net.add_edge(edge['source'], edge['target'])
 
-    # --- Inject Custom HTML/CSS/JS for the Popup Modal ---
     net.write_html(filename, open_browser=False)
 
     with open(filename, 'r+', encoding='utf-8') as f:
         html_content = f.read()
         soup = BeautifulSoup(html_content, 'html.parser')
 
-        # CSS for the popup
         css = """
         <style>
-            #popup-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
+            #popup-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; font-family: sans-serif; }
             #popup-content { background-color: white; padding: 25px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 60%; max-width: 700px; max-height: 80vh; overflow-y: auto; }
             #popup-close { float: right; font-size: 24px; font-weight: bold; cursor: pointer; }
+            #popup-body h3 { margin-top: 0; color: #333; }
+            #popup-body h4 { margin-top: 20px; margin-bottom: 5px; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+            #popup-body p { color: #444; line-height: 1.6; }
+            #popup-body ul { padding-left: 20px; }
+            #popup-body li { margin-bottom: 5px; }
         </style>
         """
         soup.head.append(BeautifulSoup(css, 'html.parser'))
 
-        # HTML for the popup
         popup_html = """
         <div id="popup-container">
             <div id="popup-content">
@@ -197,13 +249,11 @@ def create_flow_diagram(graph_data: Dict, tagged_data: List[Dict], filename: str
         """
         soup.body.append(BeautifulSoup(popup_html, 'html.parser'))
 
-        # JavaScript for the popup
         js = """
         <script type="text/javascript">
             function showPopup(encodedContent) {
                 var container = document.getElementById('popup-container');
                 var body = document.getElementById('popup-body');
-                // Decode the Base64 content and set it
                 body.innerHTML = atob(encodedContent);
                 container.style.display = 'flex';
             }
@@ -211,7 +261,6 @@ def create_flow_diagram(graph_data: Dict, tagged_data: List[Dict], filename: str
                 var container = document.getElementById('popup-container');
                 container.style.display = 'none';
             }
-            // Close popup if user clicks outside the content area
             window.onclick = function(event) {
                 var container = document.getElementById('popup-container');
                 if (event.target == container) {
@@ -222,18 +271,18 @@ def create_flow_diagram(graph_data: Dict, tagged_data: List[Dict], filename: str
         """
         soup.body.append(BeautifulSoup(js, 'html.parser'))
 
-        # Write the modified HTML back to the file
         f.seek(0)
         f.write(str(soup))
         f.truncate()
 
-    logging.info(f"📈 Unified diagram with clickable popups saved as '{filename}'.")
+    logging.info(f"📦 Self-contained diagram with popups saved as '{filename}'.")
 
 
 # ----------------------------------------------------------------------------
 # MAIN EXECUTION PIPELINE
 # ----------------------------------------------------------------------------
 def main_pipeline(text: str, doc_title: str):
+    """Runs the full end-to-end pipeline."""
     chunks = get_semantic_chunks(text)
     
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -254,5 +303,5 @@ if __name__ == "__main__":
 
     Renewable energy technologies are emerging as crucial solutions. Solar panels and wind turbines are becoming more efficient and cost-effective. Energy storage technologies are solving intermittency challenges. Smart grid systems are enabling better integration of renewable sources.
     """
-    # We define the title for our "ultra parent" or root node here
+    # Define the title for the main root node here
     main_pipeline(input_paragraph, doc_title="Document Analysis")
