@@ -3,7 +3,6 @@
 import json
 import time
 import logging
-import base64  # To safely pass data to JavaScript
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
 
@@ -13,7 +12,6 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # Visualization library for Stage 4
 from pyvis.network import Network
-from bs4 import BeautifulSoup # To inject custom HTML/JS/CSS
 
 # --- Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -59,22 +57,17 @@ def abc_response(prompt: str) -> str:
     if "You are an expert Information Architect" in prompt:
         return json.dumps({
             "nodes": [
-                # Root Node
                 {"id": "Document Analysis", "label": "Document Analysis", "group": "root", "size": 35},
-                # Parent Nodes
                 {"id": "Artificial Intelligence", "label": "Artificial Intelligence", "group": "parent", "size": 25},
                 {"id": "Environmental Issues", "label": "Environmental Issues", "group": "parent", "size": 25},
-                # Child Nodes
                 {"id": "AI's Industrial Transformation", "label": "AI's Industrial Transformation", "group": "child", "size": 15},
                 {"id": "AI Advancements and Challenges", "label": "AI Advancements and Challenges", "group": "child", "size": 15},
                 {"id": "Climate Change Impacts", "label": "Climate Change Impacts", "group": "child", "size": 15},
                 {"id": "Renewable Energy Solutions", "label": "Renewable Energy Solutions", "group": "child", "size": 15}
             ],
             "edges": [
-                # Edges from Root to Parents
                 {"source": "Document Analysis", "target": "Artificial Intelligence"},
                 {"source": "Document Analysis", "target": "Environmental Issues"},
-                # Edges from Parents to Children
                 {"source": "Artificial Intelligence", "target": "AI's Industrial Transformation"},
                 {"source": "Artificial Intelligence", "target": "AI Advancements and Challenges"},
                 {"source": "Environmental Issues", "target": "Climate Change Impacts"},
@@ -102,10 +95,9 @@ def get_semantic_chunks(text: str, model_path="all-mpnet-base-v2", threshold=80)
     return chunks
 
 # ----------------------------------------------------------------------------
-# STAGE 2: AUTOMATED TOPIC TAGGING (CHUNK-LEVEL)
+# STAGE 2: AUTOMATED TOPIC TAGGING
 # ----------------------------------------------------------------------------
 def generate_topic_for_chunk(chunk: str) -> Dict:
-    """Generates a main topic and tags for a single chunk."""
     prompt = f"""
     You are an expert data analyst. For the following text chunk, create a JSON object.
     The "main_topic" should be a short, clear title for the chunk, like a section heading.
@@ -133,10 +125,9 @@ def generate_topic_for_chunk(chunk: str) -> Dict:
         return {}
 
 # ----------------------------------------------------------------------------
-# STAGE 3: HIERARCHICAL SYNTHESIS (DOCUMENT-LEVEL)
+# STAGE 3: HIERARCHICAL SYNTHESIS
 # ----------------------------------------------------------------------------
 def generate_hierarchical_graph(tagged_data: List[Dict], doc_title: str) -> Dict:
-    """Analyzes all main topics to create a unified hierarchical graph."""
     main_topics = [item.get('main_topic', '') for item in tagged_data if item.get('main_topic')]
     topics_list_str = "\n- ".join(main_topics)
 
@@ -149,8 +140,6 @@ def generate_hierarchical_graph(tagged_data: List[Dict], doc_title: str) -> Dict
 
     # List of Main Topics to Organize:
     - {topics_list_str}
-
-    # Your JSON Graph Output:
     """
     logging.info("🧠 Synthesizing unified hierarchical graph from all topics...")
     response_str = abc_response(prompt)
@@ -162,10 +151,9 @@ def generate_hierarchical_graph(tagged_data: List[Dict], doc_title: str) -> Dict
 
 
 # ----------------------------------------------------------------------------
-# STAGE 4: VISUALIZATION (with Clickable Popups and Self-Contained)
+# STAGE 4: VISUALIZATION (Reverted to Hover-for-Details)
 # ----------------------------------------------------------------------------
 def create_flow_diagram(graph_data: Dict, tagged_data: List[Dict], filename: str = "flow_diagram.html"):
-    """Generates a single, self-contained interactive HTML graph."""
     if not graph_data.get("nodes"):
         logging.warning("No nodes found. Skipping visualization.")
         return
@@ -204,78 +192,24 @@ def create_flow_diagram(graph_data: Dict, tagged_data: List[Dict], filename: str
         color_map = {"root": "#8B0000", "parent": "#FF4500", "child": "#1E90FF"}
         color = color_map.get(group, "#808080")
 
-        onclick_handler = ""
+        # Prepare the hover tooltip content
+        hover_title = ""
         chunk_info = next((item for item in tagged_data if item.get('main_topic') == label), None)
         if chunk_info:
             summary = chunk_info.get('summary', 'No summary.')
             tags_html = "<ul>" + "".join(f"<li>{tag}</li>" for tag in chunk_info.get('tags', [])) + "</ul>"
-            chunk_text = chunk_info.get('original_chunk', 'No original text.').replace('\n', '<br>')
-            popup_html_content = f"<h3>{label}</h3><h4>Summary</h4><p>{summary}</p><h4>Tags</h4>{tags_html}<h4>Original Text</h4><p>{chunk_text}</p>"
-            encoded_content = base64.b64encode(popup_html_content.encode('utf-8')).decode('utf-8')
-            onclick_handler = f"showPopup('{encoded_content}');"
+            
+            # Format the content for the hover tooltip (title attribute)
+            hover_title = f"<b>Summary:</b> {summary}<br><br><b>Key Tags:</b>{tags_html}"
 
-        net.add_node(node_id, label=label, size=size, color=color, title="Click for details", **{"onclick": onclick_handler})
+        # Add the node with the 'title' attribute for the hover tooltip
+        net.add_node(node_id, label=label, size=size, color=color, title=hover_title)
 
     for edge in edges:
         net.add_edge(edge['source'], edge['target'])
 
     net.write_html(filename, open_browser=False)
-
-    with open(filename, 'r+', encoding='utf-8') as f:
-        html_content = f.read()
-        soup = BeautifulSoup(html_content, 'html.parser')
-
-        css = """
-        <style>
-            #popup-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; font-family: sans-serif; }
-            #popup-content { background-color: white; padding: 25px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 60%; max-width: 700px; max-height: 80vh; overflow-y: auto; }
-            #popup-close { float: right; font-size: 24px; font-weight: bold; cursor: pointer; }
-            #popup-body h3 { margin-top: 0; color: #333; }
-            #popup-body h4 { margin-top: 20px; margin-bottom: 5px; color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-            #popup-body p { color: #444; line-height: 1.6; }
-            #popup-body ul { padding-left: 20px; }
-            #popup-body li { margin-bottom: 5px; }
-        </style>
-        """
-        soup.head.append(BeautifulSoup(css, 'html.parser'))
-
-        popup_html = """
-        <div id="popup-container">
-            <div id="popup-content">
-                <span id="popup-close" onclick="closePopup()">&times;</span>
-                <div id="popup-body"></div>
-            </div>
-        </div>
-        """
-        soup.body.append(BeautifulSoup(popup_html, 'html.parser'))
-
-        js = """
-        <script type="text/javascript">
-            function showPopup(encodedContent) {
-                var container = document.getElementById('popup-container');
-                var body = document.getElementById('popup-body');
-                body.innerHTML = atob(encodedContent);
-                container.style.display = 'flex';
-            }
-            function closePopup() {
-                var container = document.getElementById('popup-container');
-                container.style.display = 'none';
-            }
-            window.onclick = function(event) {
-                var container = document.getElementById('popup-container');
-                if (event.target == container) {
-                    container.style.display = "none";
-                }
-            }
-        </script>
-        """
-        soup.body.append(BeautifulSoup(js, 'html.parser'))
-
-        f.seek(0)
-        f.write(str(soup))
-        f.truncate()
-
-    logging.info(f"📦 Self-contained diagram with popups saved as '{filename}'.")
+    logging.info(f"📦 Self-contained diagram with hover details saved as '{filename}'.")
 
 
 # ----------------------------------------------------------------------------
@@ -303,5 +237,4 @@ if __name__ == "__main__":
 
     Renewable energy technologies are emerging as crucial solutions. Solar panels and wind turbines are becoming more efficient and cost-effective. Energy storage technologies are solving intermittency challenges. Smart grid systems are enabling better integration of renewable sources.
     """
-    # Define the title for the main root node here
     main_pipeline(input_paragraph, doc_title="Document Analysis")
