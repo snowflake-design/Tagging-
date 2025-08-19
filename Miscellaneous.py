@@ -13,15 +13,27 @@ from streamlit_flow.elements import StreamlitFlowNode, StreamlitFlowEdge
 from streamlit_flow.layouts import TreeLayout
 from streamlit_flow.state import StreamlitFlowState
 
-# Replaced LangChain with semantic-chunker and sentence-transformers
-from semantic_chunker.chunker import SemanticChunker
-from sentence_transformers import SentenceTransformer
+# Import the Rango Ramesh semantic chunker from local folder
+try:
+    import sys
+    import os
+    # Add the semantic_chunker folder to the Python path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    semantic_chunker_path = os.path.join(current_dir, 'semantic_chunker')
+    if semantic_chunker_path not in sys.path:
+        sys.path.insert(0, semantic_chunker_path)
+    
+    # Now import from the local semantic_chunker folder
+    from semantic_chunker.core import SemanticChunker
+except ImportError as e:
+    st.error(f"Failed to import semantic_chunker: {e}")
+    st.error("Please ensure the 'semantic_chunker' folder is in the same directory as this script")
+    st.stop()
 
 # --- Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Session State Initialization ---
-# This robust setup prevents the app from resetting on widget interactions.
 def initialize_session_state():
     """Initializes all necessary keys in Streamlit's session state."""
     if 'flow_state' not in st.session_state:
@@ -105,32 +117,47 @@ def abc_response(prompt: str) -> str:
         })
     return "{}"
 
-
 # ----------------------------------------------------------------------------
-# STAGE 1: SEMANTIC CHUNKING (REPLACED with rango-ramesh/semantic-chunker)
+# STAGE 1: SEMANTIC CHUNKING (FIXED for Rango Ramesh implementation)
 # ----------------------------------------------------------------------------
-@st.cache_resource
-def load_embedding_model():
-    """Loads and caches the SentenceTransformer model."""
-    return SentenceTransformer("all-mpnet-base-v2", device='cpu')
-
 @st.cache_data
 def get_semantic_chunks(text: str) -> List[str]:
     """Chunks text semantically using rango-ramesh/semantic-chunker."""
-    model = load_embedding_model()
-    # Initialize the chunker with the pre-loaded model instance
-    chunker = SemanticChunker(
-        model=model,
-        max_tokens=256,       # Max tokens for a final merged chunk
-        cluster_threshold=0.6 # Controls grouping granularity (higher = fewer, larger clusters)
-    )
-    # The library expects a list of dictionaries, but its internal logic
-    # can gracefully handle a list of strings by splitting them first.
-    # We will split by paragraph for better initial granularity.
-    initial_split = [{"text": p.strip()} for p in text.split('\n\n') if p.strip()]
-    merged_chunks = chunker.chunk(initial_split)
-    # Return a list of the final text chunks
-    return [chunk['text'] for chunk in merged_chunks]
+    try:
+        # Initialize the chunker with default settings
+        # The Rango Ramesh implementation uses sentence-transformers internally
+        chunker = SemanticChunker(
+            max_tokens=300,           # Max tokens for a final merged chunk
+            threshold=0.5,            # Clustering threshold (lower = more granular)
+            similarity_threshold=0.4  # Minimum similarity for semantic pairs
+        )
+        
+        # Split text into initial chunks (by paragraphs for better granularity)
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        
+        # Convert to the format expected by semantic chunker
+        initial_chunks = [{"text": paragraph} for paragraph in paragraphs]
+        
+        # Process with semantic chunker
+        merged_chunks = chunker.chunk(initial_chunks)
+        
+        # Extract text from the merged chunks
+        result_chunks = []
+        for chunk in merged_chunks:
+            if isinstance(chunk, dict) and 'text' in chunk:
+                result_chunks.append(chunk['text'])
+            elif isinstance(chunk, str):
+                result_chunks.append(chunk)
+        
+        logging.info(f"Successfully created {len(result_chunks)} semantic chunks")
+        return result_chunks
+        
+    except Exception as e:
+        logging.error(f"Error in semantic chunking: {e}")
+        # Fallback to simple paragraph splitting if semantic chunker fails
+        st.warning(f"Semantic chunker failed, using fallback method: {e}")
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        return paragraphs[:10]  # Limit to 10 chunks as fallback
 
 # ----------------------------------------------------------------------------
 # STAGE 2: AUTOMATED TOPIC TAGGING
@@ -161,7 +188,13 @@ def generate_topic_for_chunk(chunk_with_id: tuple) -> Dict:
         return data
     except json.JSONDecodeError:
         logging.error(f"Failed to decode JSON for chunk: {chunk_text[:50]}...")
-        return {}
+        return {
+            'chunk_id': chunk_id,
+            'main_topic': f"Topic {chunk_id}",
+            'summary': "Summary not available",
+            'tags': ["tag1", "tag2"],
+            'original_chunk': chunk_text
+        }
 
 # ----------------------------------------------------------------------------
 # STAGE 3: HIERARCHICAL SYNTHESIS (As provided)
@@ -226,14 +259,39 @@ def create_flow_elements(graph_data: Dict) -> (List[StreamlitFlowNode], List[Str
     flow_nodes = []
     flow_edges = []
     color_map = {"root": "#8B0000", "parent": "#FF4500", "child": "#B22222", "grandchild": "#1E90FF"}
+    
     for node in graph_data.get('nodes', []):
         group = node.get("group")
-        flow_node = StreamlitFlowNode(id=node['id'], pos=(0, 0), data={'label': node['label']}, node_type='default' if group != 'root' else 'input', source_position='bottom', target_position='top',
-                                      style={'background': color_map.get(group, "#808080"), 'color': 'white', 'borderRadius': '8px', 'padding': '10px 15px', 'width': '220px', 'textAlign': 'center', 'fontSize': '14px', 'border': 'none'})
+        flow_node = StreamlitFlowNode(
+            id=node['id'], 
+            pos=(0, 0), 
+            data={'label': node['label']}, 
+            node_type='default' if group != 'root' else 'input', 
+            source_position='bottom', 
+            target_position='top',
+            style={
+                'background': color_map.get(group, "#808080"), 
+                'color': 'white', 
+                'borderRadius': '8px', 
+                'padding': '10px 15px', 
+                'width': '220px', 
+                'textAlign': 'center', 
+                'fontSize': '14px', 
+                'border': 'none'
+            }
+        )
         flow_nodes.append(flow_node)
+    
     for edge in graph_data.get('edges', []):
-        flow_edge = StreamlitFlowEdge(id=f"e-{edge['source']}-{edge['target']}", source=edge['source'], target=edge['target'], animated=True, style={'stroke': '#555555', 'strokeWidth': '2px'})
+        flow_edge = StreamlitFlowEdge(
+            id=f"e-{edge['source']}-{edge['target']}", 
+            source=edge['source'], 
+            target=edge['target'], 
+            animated=True, 
+            style={'stroke': '#555555', 'strokeWidth': '2px'}
+        )
         flow_edges.append(flow_edge)
+    
     return flow_nodes, flow_edges
 
 # ----------------------------------------------------------------------------
@@ -260,6 +318,7 @@ st.set_page_config(layout="wide", page_title="Topic Flow Generator")
 initialize_session_state()
 
 st.title("📄 Automated Topic Flow Diagram Generator")
+st.markdown("*Powered by Rango Ramesh Semantic Chunker*")
 
 # --- SIDEBAR FOR INPUT ---
 with st.sidebar:
@@ -279,8 +338,7 @@ However, ethical considerations around AI deployment are becoming increasingly i
 
 Climate change represents one of the most pressing challenges of our time. Rising global temperatures are causing ice caps to melt and sea levels to rise. Extreme weather events are becoming more frequent and severe. International cooperation is essential to address this global crisis effectively.
 
-Renewable energy technologies are emerging as crucial solutions. Solar panels and wind turbines are becoming more efficient and cost-effective. Energy storage technologies are solving intermittency challenges. Smart grid systems are enabling better integration of renewable sources.
-"""
+Renewable energy technologies are emerging as crucial solutions. Solar panels and wind turbines are becoming more efficient and cost-effective. Energy storage technologies are solving intermittency challenges. Smart grid systems are enabling better integration of renewable sources."""
 
     if st.session_state.input_method == "Text Input":
         user_text_area = st.text_area(
@@ -313,38 +371,59 @@ Renewable energy technologies are emerging as crucial solutions. Solar panels an
             st.warning("Please provide some text or upload a valid PDF before generating.")
         else:
             with st.spinner("Processing document... This may take a moment."):
-                # Stage 1: Chunking
-                chunks = get_semantic_chunks(st.session_state.user_text)
-                chunks_with_ids = [(f"chunk-{i}", chunk) for i, chunk in enumerate(chunks)]
-                
-                # Stage 2: Tagging in Parallel
-                with ThreadPoolExecutor(max_workers=5) as executor:
-                    tagged_data = list(executor.map(generate_topic_for_chunk, chunks_with_ids))
-                
-                # Stage 3: Hierarchical Synthesis
-                graph_data = generate_hierarchical_graph(tagged_data, doc_title="Document Analysis")
-                
-                # Stage 4: Visualization Element Creation
-                flow_nodes, flow_edges = create_flow_elements(graph_data)
-                
-                # Update session state with results
-                st.session_state.graph_data = graph_data
-                st.session_state.tagged_data = tagged_data
-                st.session_state.flow_state = StreamlitFlowState(nodes=flow_nodes, edges=flow_edges, selected_id=None)
-                st.session_state.processing_complete = True
-            st.success("Diagram generated successfully!")
+                try:
+                    # Stage 1: Chunking
+                    st.info("Stage 1: Semantic chunking...")
+                    chunks = get_semantic_chunks(st.session_state.user_text)
+                    chunks_with_ids = [(f"chunk-{i}", chunk) for i, chunk in enumerate(chunks)]
+                    
+                    # Stage 2: Tagging in Parallel
+                    st.info("Stage 2: Topic tagging...")
+                    with ThreadPoolExecutor(max_workers=3) as executor:
+                        tagged_data = list(executor.map(generate_topic_for_chunk, chunks_with_ids))
+                    
+                    # Stage 3: Hierarchical Synthesis
+                    st.info("Stage 3: Building hierarchy...")
+                    graph_data = generate_hierarchical_graph(tagged_data, doc_title="Document Analysis")
+                    
+                    # Stage 4: Visualization Element Creation
+                    st.info("Stage 4: Creating visualization...")
+                    flow_nodes, flow_edges = create_flow_elements(graph_data)
+                    
+                    # Update session state with results
+                    st.session_state.graph_data = graph_data
+                    st.session_state.tagged_data = tagged_data
+                    st.session_state.flow_state = StreamlitFlowState(nodes=flow_nodes, edges=flow_edges, selected_id=None)
+                    st.session_state.processing_complete = True
+                    
+                    st.success("Diagram generated successfully!")
+                    
+                except Exception as e:
+                    st.error(f"Error during processing: {e}")
+                    logging.error(f"Processing error: {e}")
 
 # --- MAIN PANEL FOR VISUALIZATION and DETAILS ---
 if st.session_state.processing_complete and st.session_state.graph_data:
     st.header("Topic Hierarchy Diagram")
     
+    # Display some stats
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Chunks", len(st.session_state.tagged_data))
+    with col2:
+        st.metric("Hierarchy Levels", len(set(node.get('group') for node in st.session_state.graph_data.get('nodes', []))))
+    with col3:
+        st.metric("Total Nodes", len(st.session_state.graph_data.get('nodes', [])))
+    
     # The streamlit_flow component for rendering the graph
-    st.session_state.flow_state = streamlit_flow('tree_layout', 
-                                                 st.session_state.flow_state, 
-                                                 layout=TreeLayout(direction='down'), 
-                                                 fit_view=True, 
-                                                 get_node_on_click=True, 
-                                                 height=600)
+    st.session_state.flow_state = streamlit_flow(
+        'tree_layout', 
+        st.session_state.flow_state, 
+        layout=TreeLayout(direction='down'), 
+        fit_view=True, 
+        get_node_on_click=True, 
+        height=600
+    )
 
     # --- SIDEBAR FOR NODE DETAILS (only shows after a node is clicked) ---
     if st.session_state.flow_state and st.session_state.flow_state.selected_id:
@@ -370,7 +449,8 @@ if st.session_state.processing_complete and st.session_state.graph_data:
                         if chunk_info:
                             all_summaries.append(chunk_info.get('summary', ''))
                             all_chunks.append(chunk_info.get('original_chunk', ''))
-                            for tag in chunk_info.get('tags', []): all_tags.add(tag)
+                            for tag in chunk_info.get('tags', []): 
+                                all_tags.add(tag)
                     st.markdown(f"**Aggregated Summary:** {' '.join(all_summaries)}")
                     st.write("**All Contained Tags:**", sorted(list(all_tags)))
                     combined_text = "\n\n---\n\n".join(all_chunks)
@@ -384,7 +464,8 @@ if st.session_state.processing_complete and st.session_state.graph_data:
                         chunk_info = next((item for item in st.session_state.tagged_data if item.get('chunk_id') == chunk_id), None)
                         if chunk_info:
                              all_summaries.append(chunk_info.get('summary', ''))
-                             for tag in chunk_info.get('tags', []): all_tags.add(tag)
+                             for tag in chunk_info.get('tags', []): 
+                                 all_tags.add(tag)
                     st.markdown(f"**Consolidated Summary:** {' '.join(all_summaries)}")
                     st.write("**Combined Tags:**", sorted(list(all_tags)))
                     st.markdown("---")
@@ -406,3 +487,19 @@ if st.session_state.processing_complete and st.session_state.graph_data:
                     st.info("This is the root node representing the entire document.")
 else:
     st.info("Enter text in the sidebar and click 'Generate Diagram' to begin.")
+    
+    # Show some helpful information
+    with st.expander("ℹ️ How it works"):
+        st.markdown("""
+        This application uses the **Rango Ramesh Semantic Chunker** to intelligently break down your text:
+        
+        1. **Semantic Chunking**: Text is split into meaningful chunks based on semantic similarity
+        2. **Topic Tagging**: Each chunk is analyzed to extract main topics and tags
+        3. **Hierarchical Synthesis**: Topics are organized into a hierarchical structure
+        4. **Interactive Visualization**: Explore the topic hierarchy with clickable nodes
+        
+        **Benefits of Semantic Chunking:**
+        - Preserves contextual relationships
+        - Creates more coherent chunks than fixed-size splitting
+        - Better for RAG applications and document analysis
+        """)
