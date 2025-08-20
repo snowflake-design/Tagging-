@@ -360,56 +360,14 @@ def process_document(text_to_process: str, doc_title: str, source_type: str, sou
         logging.error(f"Processing error: {e}")
 
 # MAIN STREAMLIT APP LOGIC
-st.set_page_config(layout="wide", page_title="Advanced Topic Flow Generator")
+st.set_page_config(layout="wide", page_title="Topic Flow Generator")
 
 # Initialize session state
 init_session_state()
 
-# Custom CSS for better UI
-st.markdown("""
-<style>
-    .main-header {
-        text-align: center;
-        padding: 1rem 0;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        font-weight: 700;
-        margin-bottom: 2rem;
-    }
-    
-    .sidebar-section {
-        background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 10px;
-        margin-bottom: 1rem;
-    }
-    
-    .info-card {
-        background: #e3f2fd;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #2196f3;
-    }
-    
-    .generate-btn {
-        background: linear-gradient(45deg, #667eea, #764ba2);
-        color: white;
-        border: none;
-        padding: 0.75rem 2rem;
-        border-radius: 25px;
-        font-weight: 600;
-        width: 100%;
-        margin-top: 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown('<h1 class="main-header">Advanced Topic Flow Diagram Generator</h1>', unsafe_allow_html=True)
+st.title("Automated Topic Flow Diagram Generator")
 
 with st.sidebar:
-    st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
     st.header("Input Source Selection")
     
     # Radio button for input method selection
@@ -424,10 +382,9 @@ with st.sidebar:
         clear_current_results()
         st.session_state.current_input_method = input_method
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")
     
     if input_method == "PDF Upload":
-        st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
         st.subheader("PDF Document Upload")
         uploaded_file = st.file_uploader(
             "Choose a PDF file", 
@@ -456,10 +413,7 @@ with st.sidebar:
         # Check for PDF change
         check_content_change("PDF Upload", uploaded_file)
         
-        st.markdown('</div>', unsafe_allow_html=True)
-        
     else:  # Text Input
-        st.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
         st.subheader("Text Input")
         DEFAULT_TEXT = """Artificial intelligence is rapidly transforming industries worldwide. Machine learning algorithms are becoming increasingly sophisticated and capable of handling complex tasks. Natural language processing has seen significant breakthroughs with the advent of transformer models. Computer vision applications are now widely deployed across various sectors.
 
@@ -479,7 +433,6 @@ Renewable energy technologies are emerging as crucial solutions. Solar panels an
         
         # Check for text change
         check_content_change("Text Input", user_text=user_text)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     # Generate button
     if st.button("Generate Topic Flow Diagram", type="primary", use_container_width=True):
@@ -515,12 +468,6 @@ Renewable energy technologies are emerging as crucial solutions. Solar panels an
         cache_count = len(st.session_state.cached_results)
         st.info(f"Cached results: {cache_count} document(s)")
         
-        # Show cache details
-        with st.expander("View Cached Documents"):
-            for hash_key, cached_item in st.session_state.cached_results.items():
-                source_info = cached_item.get('source_info', {})
-                st.text(f"• {source_info.get('type', 'Unknown')}: {source_info.get('name', 'Unknown')} ({source_info.get('title', 'No title')})")
-        
         if st.button("Clear Cache", help="Clear all cached processing results"):
             st.session_state.cached_results = {}
             st.success("Cache cleared successfully!")
@@ -528,7 +475,7 @@ Renewable energy technologies are emerging as crucial solutions. Solar panels an
 
 # Main content area
 if st.session_state.processing_complete and st.session_state.graph_data:
-    st.header("Interactive Topic Hierarchy Diagram")
+    st.header("Topic Hierarchy Diagram")
     
     # Display the flow diagram
     st.session_state.flow_state = streamlit_flow(
@@ -603,30 +550,4 @@ if st.session_state.processing_complete and st.session_state.graph_data:
                     st.info("This is the root node representing the entire document.")
 
 else:
-    st.markdown('<div class="info-card">', unsafe_allow_html=True)
-    st.info("Welcome to the Advanced Topic Flow Generator! Choose your input method from the sidebar, then click 'Generate Topic Flow Diagram' to create an interactive visualization of your document's structure.")
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Show some features
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("### Features")
-        st.markdown("- Semantic text chunking")
-        st.markdown("- Automated topic extraction")
-        st.markdown("- Hierarchical organization")
-        st.markdown("- Interactive visualization")
-    
-    with col2:
-        st.markdown("### Supported Formats")
-        st.markdown("- PDF documents")
-        st.markdown("- Plain text input")
-        st.markdown("- Multi-page documents")
-        st.markdown("- Various content types")
-    
-    with col3:
-        st.markdown("### How It Works")
-        st.markdown("1. Upload PDF or paste text")
-        st.markdown("2. System analyzes content")
-        st.markdown("3. Topics are extracted")
-        st.markdown("4. Hierarchy is generated")
+    st.info("Upload a PDF or use the text area, then click 'Generate Diagram' to begin.")
