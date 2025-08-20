@@ -432,7 +432,9 @@ Renewable energy technologies are emerging as crucial solutions. Solar panels an
         )
         
         # Check for text change
-        check_content_change("Text Input", user_text=user_text)
+        if st.session_state.current_text_content != user_text:
+            clear_current_results()
+            st.session_state.current_text_content = user_text
 
     # Generate button
     if st.button("Generate Topic Flow Diagram", type="primary", use_container_width=True):
@@ -478,14 +480,19 @@ if st.session_state.processing_complete and st.session_state.graph_data:
     st.header("Topic Hierarchy Diagram")
     
     # Display the flow diagram
-    st.session_state.flow_state = streamlit_flow(
+    flow_state = streamlit_flow(
         'tree_layout', 
         st.session_state.flow_state, 
         layout=TreeLayout(direction='down'), 
         fit_view=True, 
         get_node_on_click=True, 
-        height=600
+        height=600,
+        key="flow_diagram"
     )
+    
+    # Update session state only if there's a change
+    if flow_state and flow_state.selected_id != st.session_state.flow_state.selected_id:
+        st.session_state.flow_state.selected_id = flow_state.selected_id
 
     # Node details in sidebar
     if st.session_state.flow_state and st.session_state.flow_state.selected_id:
